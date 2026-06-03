@@ -345,14 +345,28 @@
                         
                         if (phList.length > 0) {
                             const type = phList[0].getAttribute("type") || "body";
-                            if (type === "slideImage" || type === "body") {
+                            const isSlideImage = type === "slImg" || type === "sldImg" || type === "pic" || type === "slideImage";
+                            const isBody = type === "body";
+
+                            if (isSlideImage || isBody) {
                                 const offList = shape.getElementsByTagName("a:off");
                                 const extList = shape.getElementsByTagName("a:ext");
                                 
                                 if (offList.length > 0 && extList.length > 0) {
-                                    offList[0].setAttribute("x", targetLeft);
-                                    extList[0].setAttribute("cx", targetWidth);
-                                    modified = true;
+                                    if (isBody) {
+                                        // For text notes: force 6.5 inch width and 1.0 inch left margin
+                                        offList[0].setAttribute("x", targetLeft);
+                                        extList[0].setAttribute("cx", targetWidth);
+                                        modified = true;
+                                    } else if (isSlideImage) {
+                                        // For slide image: read its current width and center it perfectly on an 8.5 inch page (7772400 EMUs)
+                                        const currentCx = parseInt(extList[0].getAttribute("cx"), 10);
+                                        if (!isNaN(currentCx)) {
+                                            const newX = Math.floor((7772400 - currentCx) / 2);
+                                            offList[0].setAttribute("x", newX.toString());
+                                            modified = true;
+                                        }
+                                    }
                                 }
                             }
                         }
