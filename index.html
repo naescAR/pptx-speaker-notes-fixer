@@ -315,20 +315,27 @@
                 const zip = new JSZip();
                 const loadedZip = await zip.loadAsync(currentFile);
                 
-                // 2. Find and edit the notes master file
-                const notesMasterPath = "ppt/notesMasters/notesMaster1.xml";
-                const notesMasterFile = loadedZip.file(notesMasterPath);
+                // Values for centering on 8.5 x 11 inch notes page
+                // Target Width = 6.5 inches = 5943600 EMUs
+                // Target Left = 1.0 inch = 914400 EMUs
+                const targetWidth = "5943600";
+                const targetLeft = "914400";
                 
-                if (notesMasterFile) {
-                    const xmlText = await notesMasterFile.async("string");
+                // 2. Iterate over all notes master and individual notes slide files
+                const fileNames = Object.keys(loadedZip.files);
+                const targetFiles = fileNames.filter(name => 
+                    (name.startsWith("ppt/notesMasters/") || name.startsWith("ppt/notesSlides/")) && name.endsWith(".xml")
+                );
+
+                for (const filePath of targetFiles) {
+                    const file = loadedZip.file(filePath);
+                    if (!file) continue;
+                    
+                    const xmlText = await file.async("string");
                     const parser = new DOMParser();
                     const xmlDoc = parser.parseFromString(xmlText, "application/xml");
                     
-                    // Values for centering on 8.5 x 11 inch notes page
-                    // Target Width = 6.5 inches = 5943600 EMUs
-                    // Target Left = 1.0 inch = 914400 EMUs
-                    const targetWidth = "5943600";
-                    const targetLeft = "914400";
+                    let modified = false;
                     
                     // 3. Find and modify the Slide Image and Notes Text Box shapes
                     const shapes = xmlDoc.getElementsByTagName("p:sp");
@@ -345,15 +352,18 @@
                                 if (offList.length > 0 && extList.length > 0) {
                                     offList[0].setAttribute("x", targetLeft);
                                     extList[0].setAttribute("cx", targetWidth);
+                                    modified = true;
                                 }
                             }
                         }
                     }
                     
-                    // 4. Save the modified XML back to the zip
-                    const serializer = new XMLSerializer();
-                    const newXmlStr = serializer.serializeToString(xmlDoc);
-                    loadedZip.file(notesMasterPath, newXmlStr);
+                    // 4. Save the modified XML back to the zip if changes were made
+                    if (modified) {
+                        const serializer = new XMLSerializer();
+                        const newXmlStr = serializer.serializeToString(xmlDoc);
+                        loadedZip.file(filePath, newXmlStr);
+                    }
                 }
 
                 // 5. Generate the new zip and trigger download
