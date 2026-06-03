@@ -315,13 +315,23 @@
                 const zip = new JSZip();
                 const loadedZip = await zip.loadAsync(currentFile);
                 
-                // Values for centering on 8.5 x 11 inch notes page
-                // Target Width = 6.5 inches = 5943600 EMUs
-                // Target Left = 1.0 inch = 914400 EMUs
-                const targetWidth = "5943600";
-                const targetLeft = "914400";
+                // 2. Read the actual Page Width from presentation.xml to ensure perfect centering for any paper size
+                let pageWidth = 7772400; // Default to 8.5 inches in EMUs
+                const presFile = loadedZip.file("ppt/presentation.xml");
+                if (presFile) {
+                    const presXmlText = await presFile.async("string");
+                    const presParser = new DOMParser();
+                    const presDoc = presParser.parseFromString(presXmlText, "application/xml");
+                    const notesSzList = presDoc.getElementsByTagName("p:notesSz");
+                    if (notesSzList.length > 0) {
+                        const cxAttr = notesSzList[0].getAttribute("cx");
+                        if (cxAttr) {
+                            pageWidth = parseInt(cxAttr, 10);
+                        }
+                    }
+                }
                 
-                // 2. Iterate over all notes master and individual notes slide files
+                // 3. Iterate over all notes master and individual notes slide files
                 const fileNames = Object.keys(loadedZip.files);
                 const targetFiles = fileNames.filter(name => 
                     (name.startsWith("ppt/notesMasters/") || name.startsWith("ppt/notesSlides/")) && name.endsWith(".xml")
@@ -337,7 +347,7 @@
                     
                     let modified = false;
                     
-                    // 3. Find and modify the Slide Image and Notes Text Box shapes
+                    // 4. Find and perfectly center the Slide Image and Notes Text Box shapes
                     const shapes = xmlDoc.getElementsByTagName("p:sp");
                     for (let i = 0; i < shapes.length; i++) {
                         const shape = shapes[i];
@@ -353,26 +363,29 @@
                                 const extList = shape.getElementsByTagName("a:ext");
                                 
                                 if (offList.length > 0 && extList.length > 0) {
-                                    if (isBody) {
-                                        // For text notes: force 6.5 inch width and 1.0 inch left margin
-                                        offList[0].setAttribute("x", targetLeft);
-                                        extList[0].setAttribute("cx", targetWidth);
-                                        modified = true;
-                                    } else if (isSlideImage) {
-                                        // For slide image: read its current width and center it perfectly on an 8.5 inch page (7772400 EMUs)
-                                        const currentCx = parseInt(extList[0].getAttribute("cx"), 10);
-                                        if (!isNaN(currentCx)) {
-                                            const newX = Math.floor((7772400 - currentCx) / 2);
-                                            offList[0].setAttribute("x", newX.toString());
-                                            modified = true;
+                                    let currentCx = parseInt(extList[0].getAttribute("cx"), 10);
+                                    
+                                    if (!isNaN(currentCx)) {
+                                        // If it's a text box and it's too wide (causing bleeding), cap it at 85% of the page width
+                                        if (isBody) {
+                                            const maxWidth = Math.floor(pageWidth * 0.85);
+                                            if (currentCx > maxWidth) {
+                                                currentCx = maxWidth;
+                                                extList[0].setAttribute("cx", currentCx.toString());
+                                            }
                                         }
+
+                                        // Mathematically center it on the page based on its width!
+                                        const newX = Math.floor((pageWidth - currentCx) / 2);
+                                        offList[0].setAttribute("x", newX.toString());
+                                        modified = true;
                                     }
                                 }
                             }
                         }
                     }
                     
-                    // 4. Save the modified XML back to the zip if changes were made
+                    // 5. Save the modified XML back to the zip if changes were made
                     if (modified) {
                         const serializer = new XMLSerializer();
                         const newXmlStr = serializer.serializeToString(xmlDoc);
@@ -380,7 +393,7 @@
                     }
                 }
 
-                // 5. Generate the new zip and trigger download
+                // 6. Generate the new zip and trigger download
                 const newBlob = await loadedZip.generateAsync({type:"blob"});
                 const url = window.URL.createObjectURL(newBlob);
                 const a = document.createElement('a');
